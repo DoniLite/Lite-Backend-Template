@@ -15,5 +15,5 @@ A modern Hono + Drizzle ORM + Bun backend template with decorator-driven archite
 
 ```bash
 # Create a new project
-bun create github.com/DoniLite/Lite-Backend-Template my-project
+bunx github:DoniLite/Lite-Backend-Template my-project
 ```
