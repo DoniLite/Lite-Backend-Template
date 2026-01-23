@@ -1,0 +1,16 @@
+services:
+  {{APP_NAME_SNAKE}}_db:
+    image: postgres:17-alpine
+    container_name: {{APP_NAME_SNAKE}}_db
+    restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - {{APP_NAME_SNAKE}}_db_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT}:5432"
+
+volumes:
+  {{APP_NAME_SNAKE}}_db_data:

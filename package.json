@@ -1,0 +1,28 @@
+{
+  "name": "create-lite-backend",
+  "version": "1.0.0",
+  "description": "A modern Hono + Drizzle ORM + Bun backend template with decorator-driven architecture",
+  "type": "module",
+  "bin": {
+    "create-lite-backend": "./cli.ts"
+  },
+  "files": [
+    "cli.ts",
+    "template"
+  ],
+  "keywords": [
+    "bun",
+    "hono",
+    "drizzle",
+    "backend",
+    "template",
+    "typescript",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}

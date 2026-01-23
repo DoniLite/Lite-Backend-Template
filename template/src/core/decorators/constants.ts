@@ -1,0 +1,12 @@
+// Metadata keys for decorators
+export const CONTROLLER_METADATA = Symbol("controller");
+export const ROUTE_METADATA = Symbol("route");
+export const MIDDLEWARE_METADATA = Symbol("middleware");
+export const REPOSITORY_METADATA = Symbol("repository");
+export const SERVICE_METADATA = Symbol("service");
+export const DTO_METADATA = Symbol("dto");
+export const CACHE_METADATA = Symbol("cache");
+export const RATE_LIMIT_METADATA = Symbol("rateLimit");
+export const SWAGGER_METADATA = Symbol("swagger");
+export const ACCESS_METADATA = Symbol("access");
+export const SERIALIZE_METADATA = Symbol("serialize");
