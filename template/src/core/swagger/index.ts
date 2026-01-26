@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// src/core/swagger/index.ts
 import { SwaggerUI } from "@hono/swagger-ui";
 import type { Hono } from "hono";
 import {
@@ -28,12 +29,17 @@ export class SwaggerGenerator {
     this.config = config;
   }
 
+  /**
+   * Generate OpenAPI specification from decorated controllers
+   */
   generateSpec(): any {
+    // Generate schemas from DTOs
     this.generateSchemas();
 
     const paths: Record<string, any> = {};
     const tags = new Set<string>();
 
+    // Iterate through all registered controllers
     const controllers = getAllControllers();
 
     for (const ControllerClass of controllers) {
@@ -42,10 +48,12 @@ export class SwaggerGenerator {
 
       const { basePath, tags: controllerTags } = controllerMetadata;
 
+      // Add controller tags
       if (controllerTags) {
         controllerTags.forEach((tag) => tags.add(tag));
       }
 
+      // Get routes for this controller
       const routes = getRouteMetadata(ControllerClass) || [];
 
       for (const route of routes) {
@@ -56,6 +64,7 @@ export class SwaggerGenerator {
           paths[fullPath] = {};
         }
 
+        // Build operation object
         const operation: any = {
           summary:
             route.summary ||
@@ -65,10 +74,12 @@ export class SwaggerGenerator {
           tags: controllerTags || [],
         };
 
+        // Add deprecated flag
         if (route.deprecated) {
           operation.deprecated = true;
         }
 
+        // Add parameters (path, query)
         const parameters = [];
 
         if (route.params) {
@@ -99,21 +110,70 @@ export class SwaggerGenerator {
           operation.parameters = parameters;
         }
 
+        // Add request body
         if (
           route.body &&
           (method === "post" || method === "put" || method === "patch")
         ) {
-          const bodySchema = this.getSchemaRef(route.body);
-          operation.requestBody = {
-            required: true,
-            content: {
-              "application/json": {
-                schema: bodySchema,
+          // Handle multipart/form-data (file uploads)
+          if (
+            route.body.type === "multipart/form-data" &&
+            route.body.properties
+          ) {
+            const properties: Record<string, any> = {};
+            const requiredFields: string[] = [];
+
+            for (const [propName, propInfo] of Object.entries(
+              route.body.properties,
+            )) {
+              const propConfig = propInfo as any;
+              if (propConfig.type === "file") {
+                properties[propName] = {
+                  type: "string",
+                  format: "binary",
+                  description: propConfig.description,
+                };
+              } else {
+                properties[propName] = {
+                  type: propConfig.type || "string",
+                  description: propConfig.description,
+                };
+              }
+
+              if (propConfig.required) {
+                requiredFields.push(propName);
+              }
+            }
+
+            operation.requestBody = {
+              required: route.body.required ?? true,
+              content: {
+                "multipart/form-data": {
+                  schema: {
+                    type: "object",
+                    properties,
+                    ...(requiredFields.length > 0 && {
+                      required: requiredFields,
+                    }),
+                  },
+                },
               },
-            },
-          };
+            };
+          } else {
+            // Handle standard JSON body
+            const bodySchema = this.getSchemaRef(route.body);
+            operation.requestBody = {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: bodySchema,
+                },
+              },
+            };
+          }
         }
 
+        // Add responses
         if (!route.handler) continue;
 
         const apiResponses =
@@ -122,6 +182,7 @@ export class SwaggerGenerator {
 
         operation.responses = {};
 
+        // Transform into OpenAPI 3.0 response structure
         for (const [status, res] of Object.entries(allResponses)) {
           const responseInfo = res as any;
           const responseBody: any = {
@@ -139,6 +200,7 @@ export class SwaggerGenerator {
           operation.responses[status] = responseBody;
         }
 
+        // Add default responses if not specified
         if (!operation.responses["200"] && !operation.responses["201"]) {
           operation.responses["200"] = {
             description: "Success",
@@ -176,6 +238,7 @@ export class SwaggerGenerator {
       }
     }
 
+    // Build OpenAPI spec
     return {
       openapi: "3.0.0",
       info: {
@@ -196,14 +259,24 @@ export class SwaggerGenerator {
             scheme: "bearer",
             bearerFormat: "JWT",
           },
+          cookieAuth: {
+            type: "apiKey",
+            in: "cookie",
+            name: "session",
+          },
         },
       },
     };
   }
 
+  /**
+   * Generate JSON schemas from DTO classes
+   */
   private generateSchemas() {
     try {
       const dtoClasses = getAllDTOs();
+      // Ensure DTOs are registered (though they should be by decorators)
+      // We just log to avoid unused variable and verify count
       if (dtoClasses.length > 0) {
         console.debug(`Found ${dtoClasses.length} DTOs for schema generation`);
       }
@@ -219,8 +292,10 @@ export class SwaggerGenerator {
         },
       });
 
+      // Ensure all registered DTOs have schemas, even if empty
       for (const dtoClass of dtoClasses) {
         if (dtoClass.name && !schemas[dtoClass.name]) {
+          console.debug(`Creating empty schema for ${dtoClass.name}`);
           schemas[dtoClass.name] = {
             type: "object",
             properties: {},
@@ -241,18 +316,24 @@ export class SwaggerGenerator {
     }
   }
 
+  /**
+   * Get schema reference for a DTO class
+   */
   private getSchemaRef(dtoClass: any): any {
     if (typeof dtoClass === "string") {
       return { $ref: `#/components/schemas/${dtoClass}` };
     }
 
     if (dtoClass?.name) {
+      // Check if this DTO is registered in our schemas
       if (this.schemas[dtoClass.name]) {
         return { $ref: `#/components/schemas/${dtoClass.name}` };
       }
 
+      // For dynamic classes, try different naming patterns
       let baseName = dtoClass.name;
 
+      // Handle PartialDTO pattern
       if (baseName.startsWith("Partial")) {
         baseName = baseName.replace("Partial", "");
         if (this.schemas[baseName]) {
@@ -260,16 +341,19 @@ export class SwaggerGenerator {
         }
       }
 
+      // Handle CreateBase with exclude pattern
       if (baseName.includes("_excluded_")) {
         baseName = baseName.split("_excluded_")[0];
         if (this.schemas[baseName]) {
           return { $ref: `#/components/schemas/${baseName}` };
         }
+        // Also try to full name
         if (this.schemas[dtoClass.name]) {
           return { $ref: `#/components/schemas/${dtoClass.name}` };
         }
       }
 
+      // Try to find any schema that starts with the base name
       const tableBaseName = baseName.replace("Base", "");
       const matchingSchemas = [];
       for (const schemaName of Object.keys(this.schemas)) {
@@ -278,11 +362,14 @@ export class SwaggerGenerator {
         }
       }
 
+      // If only one matching schema, use it
       if (matchingSchemas.length === 1) {
         return { $ref: `#/components/schemas/${matchingSchemas[0]}` };
       }
 
+      // If multiple schemas, prefer the one with actual content
       if (matchingSchemas.length > 1) {
+        // For PaginatedResponseDTO, prefer the one with excluded fields
         if (baseName.startsWith("Paginated")) {
           const paginatedWithExclude = matchingSchemas.find((name) =>
             name.includes("_excluded_"),
@@ -298,32 +385,48 @@ export class SwaggerGenerator {
         if (noExcludeSchema) {
           return { $ref: `#/components/schemas/${noExcludeSchema}` };
         }
+        // Default to the first one
         return { $ref: `#/components/schemas/${matchingSchemas[0]}` };
       }
     }
 
+    console.warn(
+      `Could not find schema for ${dtoClass?.name || dtoClass}, returning empty object`,
+    );
     return { type: "object" };
   }
 
+  /**
+   * Normalize and combine base path with route path
+   */
   private normalizePath(basePath: string, routePath: string): string {
+    // Ensure basePath starts with / and remove trailing slashes
     if (!basePath.startsWith("/")) basePath = "/" + basePath;
     basePath = basePath.replace(/\/$/, "");
 
+    // Ensure routePath doesn't double slash and remove trailing slashes
     routePath = routePath.replace(/^\//, "");
     routePath = routePath.replace(/\/$/, "");
 
+    // Combine paths
     const fullPath = routePath ? `${basePath}/${routePath}` : basePath || "/";
 
+    // Convert Hono params (:id) to OpenAPI params ({id})
     return fullPath.replace(/:([^/]+)/g, "{$1}");
   }
 
+  /**
+   * Setup Swagger UI routes on a Hono app
+   */
   setupSwaggerUI(app: Hono, swaggerPath: string = "/docs") {
     const spec = this.generateSpec();
 
+    // Serve OpenAPI spec as JSON
     app.get(`${swaggerPath}/openapi.json`, (c) => {
       return c.json(spec);
     });
 
+    // Serve Swagger UI
     app.get(swaggerPath, (c) => {
       return c.html(
         SwaggerUI({
@@ -336,6 +439,9 @@ export class SwaggerGenerator {
   }
 }
 
+/**
+ * Helper function to setup Swagger on an app
+ */
 export function setupSwagger(
   app: Hono,
   config: SwaggerConfig,
