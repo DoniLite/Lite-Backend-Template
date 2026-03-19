@@ -5,6 +5,7 @@ import { expand } from "dotenv-expand";
 expand(config());
 import { Hono } from "hono";
 import api from "@/index.controller";
+import { authMiddleware } from "@/middleware/auth/auth.middleware";
 import { appConfig } from "./core/config/app.config";
 import { setupSwagger } from "./core/swagger";
 import { errorHandlerMiddleware } from "@/middleware/error-handler.middleware";
@@ -15,9 +16,18 @@ import { cors } from "hono/cors";
 const app = new Hono();
 
 // Global middlewares
+app.use(
+  cors({
+    origin: appConfig.cors.origin, // Allow configured origins
+    credentials: appConfig.cors.credentials, // Allow cookies
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    // allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    // exposeHeaders: ["Content-Length", "X-Kuma-Revision"],
+    // maxAge: 600,
+  }),
+);
 app.use(errorHandlerMiddleware());
 app.use(requestLoggerMiddleware());
-app.use(cors());
 
 app.notFound((c) => {
   return c.json(
@@ -33,11 +43,15 @@ if (appConfig.swagger.enabled) {
     {
       title: appConfig.swagger.title,
       version: appConfig.swagger.version,
-      description: "API documentation",
+      description: "API documentation with enhanced features",
       servers: [
         {
           url: `http://${appConfig.host === "0.0.0.0" ? "localhost" : appConfig.host}:${appConfig.port}`,
           description: "Development",
+        },
+        {
+          url: "https://api.obaasconsult.net",
+          description: "Production",
         },
       ],
     },
@@ -45,12 +59,9 @@ if (appConfig.swagger.enabled) {
   );
 }
 
-app.route("/api", api);
+app.use("/admin/*", authMiddleware);
 
-// Health check
-app.get("/health", (c) =>
-  c.json({ status: "ok", timestamp: new Date().toISOString() }),
-);
+app.route("/api", api);
 
 export default {
   port: appConfig.port,

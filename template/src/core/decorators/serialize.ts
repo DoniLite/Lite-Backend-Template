@@ -1,9 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import "reflect-metadata";
 import { SERIALIZE_METADATA } from "./constants";
-import type { SerializeOptions } from "./interfaces";
 import type { ClassConstructor } from "class-transformer";
 
+export interface SerializeOptions {
+  /** The DTO class to serialize the response to */
+  dto: ClassConstructor<any>;
+  /** Whether to serialize arrays (default: auto-detect) */
+  isArray?: boolean;
+}
+
+/**
+ * Get serialize metadata from a method
+ */
 export function getSerializeMetadata(
   target: any,
   propertyKey: string,
@@ -12,27 +21,42 @@ export function getSerializeMetadata(
 }
 
 /**
- * Serialize decorator - transforms response data through DTO
+ * Serialize decorator - transforms the response using the specified DTO class
+ * Uses class-transformer to exclude sensitive fields marked with @Exclude()
+ *
  * @example
- * @Serialize(UserDTO)
+ * // Basic usage - excludes fields marked with @Exclude() in UserResponseDTO
+ * @Serialize(UserResponseDTO)
  * @Get({ path: "/:id" })
- * async getById(c: Context) {}
+ * async getById(c: Context) {
+ *   return c.json(await this.service.findById(id));
+ * }
+ *
+ * @example
+ * // With arrays
+ * @Serialize(UserResponseDTO, { isArray: true })
+ * @Get({ path: "/" })
+ * async list(c: Context) {
+ *   return c.json(await this.service.findAll());
+ * }
  */
 export function Serialize(
   dto: ClassConstructor<any>,
-  options: { isArray?: boolean } = {},
+  options?: Omit<SerializeOptions, "dto">,
 ) {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     const serializeOptions: SerializeOptions = {
       dto,
-      isArray: options.isArray,
+      ...options,
     };
+
     Reflect.defineMetadata(
       SERIALIZE_METADATA,
       serializeOptions,
       target,
       propertyKey,
     );
+
     return descriptor;
   };
 }

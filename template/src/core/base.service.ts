@@ -17,8 +17,13 @@ export abstract class BaseService<
   protected logger = logger;
 
   constructor(protected repository: Repository) {}
-
+  /**
+   * Creates a new entity.
+   * @param dto - The data transfer object for creating the entity.
+   * @param _context - The Hono context, required for validation.
+   */
   @ValidateDTO()
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async create(dto: CreateDTO, _context: Context): Promise<R> {
     this.logger.debug(`Creating entity in ${this.constructor.name}`, {
       className: this.constructor.name,
@@ -43,6 +48,7 @@ export abstract class BaseService<
   async update(
     id: string | number,
     dto: UpdateDTO,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _context: Context,
   ): Promise<R[] | null> {
     this.logger.debug(`Updating entity ${id} in ${this.constructor.name}`, {
@@ -80,6 +86,11 @@ export abstract class BaseService<
     return this.repository.delete(id);
   }
 
+  /**
+   * Delete multiple entities by their IDs
+   * @param ids - Array of entity IDs to delete
+   * @returns Object with deleted count and failed IDs
+   */
   async deleteMultiple(ids: (string | number)[]): Promise<{
     deletedCount: number;
     requestedCount: number;
@@ -122,6 +133,10 @@ export abstract class BaseService<
     return this.repository.exists(id);
   }
 
+  /**
+   * Get statistics for the entity
+   * @returns EntityStatistics with monthly, weekly, and yearly data
+   */
   async getStatistics(): Promise<EntityStatistics> {
     return this.repository.getStatistics();
   }

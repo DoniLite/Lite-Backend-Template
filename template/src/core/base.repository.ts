@@ -103,6 +103,7 @@ export abstract class BaseRepository<
       filters = {},
     } = paginationQuery;
 
+    // Validate pagination params
     const validPage = Math.max(1, page);
     const validPageSize = Math.max(1, pageSize);
     const offset = (validPage - 1) * validPageSize;
@@ -110,10 +111,12 @@ export abstract class BaseRepository<
     let query = this.db.select().from(this.table as PgTable);
     const conditions: any[] = [];
 
+    // Apply filters
     if (Object.keys(filters).length > 0) {
       for (const [key, value] of Object.entries(filters)) {
         if (value !== undefined) {
           if (Array.isArray(value)) {
+            // Handle array filters (IN clause)
             conditions.push(eq((this.table as any)[key], value[0]));
           } else if (typeof value === "string" || typeof value === "number") {
             conditions.push(eq((this.table as any)[key], value));
@@ -124,9 +127,11 @@ export abstract class BaseRepository<
       }
     }
 
+    // Apply search if provided
     if (search?.trim()) {
       const searchTerms = search.trim().split(" ").filter(Boolean);
       const searchConditions = searchTerms.flatMap((term) => {
+        // Search across common text fields
         const textFields = [
           "name",
           "title",
@@ -147,10 +152,12 @@ export abstract class BaseRepository<
       }
     }
 
+    // Apply conditions
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as typeof query;
     }
 
+    // Apply sorting
     const sortByField = (this.table as any)[sortBy];
     if (sortByField) {
       query = query.orderBy(
@@ -158,6 +165,7 @@ export abstract class BaseRepository<
       ) as typeof query;
     }
 
+    // Get total count
     const countQuery = this.db
       .select({ count: count() })
       .from(this.table as PgTable);
@@ -167,7 +175,9 @@ export abstract class BaseRepository<
       const totalCount = countQueryWithFilters[0]?.count;
       const itemCount = totalCount ?? 0;
 
+      // Apply pagination
       const items = (await query.limit(validPageSize).offset(offset)) as T[];
+
       let outItems = items as unknown as R[];
 
       if (populateChildren) {
@@ -186,7 +196,9 @@ export abstract class BaseRepository<
     const totalCount = (await countQuery)[0]?.count;
     const itemCount = totalCount ?? 0;
 
+    // Apply pagination
     const items = (await query.limit(validPageSize).offset(offset)) as T[];
+
     let outItems = items as unknown as R[];
 
     if (populateChildren) {
@@ -202,8 +214,13 @@ export abstract class BaseRepository<
     };
   }
 
+  /**
+   * Populate children for items when requested. Default implementation is a no-op.
+   * Subclasses that have child relations should override this to fetch and attach children.
+   */
   protected async populateChildrenForItems(
     items: T[],
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _paginationQuery?: PaginationQuery,
   ): Promise<R[]> {
     return items as unknown as R[];
@@ -276,7 +293,10 @@ export abstract class BaseRepository<
   }
 
   async update(id: string | number, dto: UpdateDTO): Promise<R[] | null> {
-    this.logger.debug(`Updating entity ${id} in DB`, { id });
+    this.logger.debug(`Updating entity ${id} in DB`, {
+      // table: (this.table as any)[Symbol.for("drizzle:Name")] || "unknown",
+      id,
+    });
     const result = (await this.db
       .update(this.table)
       .set(dto)
@@ -295,7 +315,7 @@ export abstract class BaseRepository<
       return result.rowCount ? result.rowCount > 0 : true;
     } catch (error) {
       this.logger.error(
-        `Failed to delete entity ${id}`,
+        `Failed to delete entity ${id} from ${(this.table as any)[Symbol.for("drizzle:Name")] || "unknown"}`,
         {
           className: this.constructor.name,
           method: "delete",
@@ -307,6 +327,11 @@ export abstract class BaseRepository<
     }
   }
 
+  /**
+   * Delete multiple entities by their IDs
+   * @param ids - Array of entity IDs to delete
+   * @returns Number of deleted entities
+   */
   async deleteMultiple(ids: (string | number)[]): Promise<number> {
     if (ids.length === 0) {
       return 0;
@@ -358,30 +383,44 @@ export abstract class BaseRepository<
     return result !== null;
   }
 
+  /**
+   * Get statistics for entities based on creation date
+   * @returns EntityStatistics with monthly, weekly, and yearly comparisons
+   */
   async getStatistics(): Promise<EntityStatistics> {
     const now = new Date();
 
+    // Monthly statistics
     const monthly = await this.getPeriodStatistics(
       this.getMonthRange(now),
       this.getMonthRange(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
       "month",
     );
 
+    // Weekly statistics
     const weekly = await this.getPeriodStatistics(
       this.getWeekRange(now),
       this.getWeekRange(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)),
       "week",
     );
 
+    // Yearly statistics
     const yearly = await this.getPeriodStatistics(
       this.getYearRange(now),
       this.getYearRange(new Date(now.getFullYear() - 1, 0, 1)),
       "year",
     );
 
-    return { monthly, weekly, yearly };
+    return {
+      monthly,
+      weekly,
+      yearly,
+    };
   }
 
+  /**
+   * Get statistics for a specific period compared to previous period
+   */
   private async getPeriodStatistics(
     currentRange: { start: Date; end: Date },
     previousRange: { start: Date; end: Date },
@@ -393,6 +432,7 @@ export abstract class BaseRepository<
       throw new Error("Table must have a createdAt field for statistics");
     }
 
+    // Count for current period
     const [currentResult] = await this.db
       .select({ count: count() })
       .from(this.table as PgTable)
@@ -405,6 +445,7 @@ export abstract class BaseRepository<
 
     const currentCount = currentResult?.count ?? 0;
 
+    // Count for previous period
     const [previousResult] = await this.db
       .select({ count: count() })
       .from(this.table as PgTable)
@@ -417,6 +458,7 @@ export abstract class BaseRepository<
 
     const previousCount = previousResult?.count ?? 0;
 
+    // Calculate growth
     const growth = currentCount - previousCount;
     const growthPercentage =
       previousCount > 0
@@ -425,6 +467,7 @@ export abstract class BaseRepository<
           ? 100
           : 0;
 
+    // Calculate percentage of total
     const totalCount = currentCount + previousCount;
     const currentPercentage =
       totalCount > 0
@@ -451,6 +494,9 @@ export abstract class BaseRepository<
     };
   }
 
+  /**
+   * Get start and end dates for a month
+   */
   private getMonthRange(date: Date): { start: Date; end: Date } {
     const start = new Date(date.getFullYear(), date.getMonth(), 1);
     const end = new Date(
@@ -465,6 +511,9 @@ export abstract class BaseRepository<
     return { start, end };
   }
 
+  /**
+   * Get start and end dates for a week (Monday to Sunday)
+   */
   private getWeekRange(date: Date): { start: Date; end: Date } {
     const day = date.getDay();
     const diff = date.getDate() - day + (day === 0 ? -6 : 1);
@@ -478,12 +527,18 @@ export abstract class BaseRepository<
     return { start, end };
   }
 
+  /**
+   * Get start and end dates for a year
+   */
   private getYearRange(date: Date): { start: Date; end: Date } {
     const start = new Date(date.getFullYear(), 0, 1);
     const end = new Date(date.getFullYear(), 11, 31, 23, 59, 59, 999);
     return { start, end };
   }
 
+  /**
+   * Format period for display
+   */
   private formatPeriod(date: Date, type: "month" | "week" | "year"): string {
     if (type === "year") {
       return date.getFullYear().toString();
@@ -491,10 +546,14 @@ export abstract class BaseRepository<
     if (type === "month") {
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     }
+    // Week
     const weekNumber = this.getWeekNumber(date);
     return `${date.getFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
   }
 
+  /**
+   * Get ISO week number
+   */
   private getWeekNumber(date: Date): number {
     const d = new Date(
       Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),

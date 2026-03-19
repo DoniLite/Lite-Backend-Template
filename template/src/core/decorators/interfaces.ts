@@ -1,30 +1,8 @@
+// ===== INTERFACES =====
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ClassConstructor } from "class-transformer";
-
-export interface ControllerOptions {
-  basePath: string;
-  tags?: string[];
-  description?: string;
-}
-
-export interface RouteOptions {
-  method?: "get" | "post" | "put" | "patch" | "delete";
-  path?: string;
-  summary?: string;
-  description?: string;
-  deprecated?: boolean;
-  handler?: string;
-  body?: ClassConstructor<any>;
-  params?: Record<string, { type: string; description?: string }>;
-  query?: Record<string, { type: string; description?: string }>;
-  responses?: Record<
-    number,
-    { description: string; schema?: ClassConstructor<any> }
-  >;
-}
 
 export interface RepositoryOptions {
-  tableName?: string;
+  tableName: string;
   cache?: boolean;
   cacheTTL?: number;
 }
@@ -34,17 +12,35 @@ export interface ServiceOptions {
   singleton?: boolean;
 }
 
+export interface ControllerOptions {
+  basePath: string;
+  middleware?: any[];
+  tags?: string[];
+  description?: string;
+}
+
+export interface RouteOptions {
+  path?: string;
+  method?: "get" | "post" | "patch" | "put" | "delete";
+  middleware?: any[];
+  description?: string;
+  summary?: string;
+  responses?: Record<number, { description: string; schema?: any }>;
+  body?: any;
+  params?: Record<string, { type: string; description?: string }>;
+  query?: Record<string, { type: string; description?: string }>;
+  deprecated?: boolean;
+  handler?: string;
+}
+
 export interface CacheOptions {
-  ttl?: number;
-  key?: string;
+  ttl?: number; // seconds
+  key?: string | ((args: any[]) => string);
+  invalidateOn?: string[]; // method names that invalidate this cache
 }
 
 export interface RateLimitOptions {
-  max: number;
-  window: number;
-}
-
-export interface SerializeOptions {
-  dto: ClassConstructor<any>;
-  isArray?: boolean;
+  max: number; // max requests
+  window: number; // time window in seconds
+  message?: string;
 }

@@ -10,6 +10,7 @@ import {
   IsNumber,
   ValidateNested,
   IsObject,
+  IsArray, // Added IsObject
 } from "class-validator";
 import {
   plainToInstance,
@@ -21,7 +22,8 @@ import {
 import type { PaginatedResponse, SortOrder } from "@/types/pagination";
 import { getTableColumns } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
-import { DTO } from "./decorators";
+import { DTO, DTO_CLASSES } from "./decorators";
+import { JSONSchema } from "class-validator-jsonschema"; // Added JSONSchema import
 
 export function PartialDTO<T extends ClassConstructor<object>>(DTOClass: T): T {
   @DTO()
@@ -40,9 +42,12 @@ export function PartialDTO<T extends ClassConstructor<object>>(DTOClass: T): T {
     IsOptional()(PartialClass.prototype, key);
   });
 
+  // Copy metadata name to keep things clean/identifiable if needed
   Object.defineProperty(PartialClass, "name", {
     value: `Partial${DTOClass.name}`,
   });
+
+  DTO_CLASSES.set(PartialClass.name, PartialClass);
 
   return PartialClass as T;
 }
@@ -50,6 +55,11 @@ export function PartialDTO<T extends ClassConstructor<object>>(DTOClass: T): T {
 export abstract class BaseDTO {
   /**
    * Create an instance of the DTO from a plain object.
+   * By default, copies all properties from the source object.
+   * Use `fromStrict()` to only include properties decorated with @Expose().
+   *
+   * @param plain - Source object to transform
+   * @param options - Optional class-transformer options
    */
   static from<T extends BaseDTO>(
     this: new () => T,
@@ -60,7 +70,15 @@ export abstract class BaseDTO {
   }
 
   /**
-   * Create an instance with ONLY properties decorated with @Expose().
+   * Create an instance of the DTO with ONLY the properties decorated with @Expose().
+   * Properties not marked with @Expose() will be excluded from the result.
+   *
+   * @param plain - Source object to transform
+   * @param options - Additional class-transformer options
+   *
+   * @example
+   * // Only includes id, email, name, image, token (decorated with @Expose)
+   * UserSessionDTO.fromStrict({ ...user, password: 'secret', token })
    */
   static fromStrict<T extends BaseDTO>(
     this: new () => T,
@@ -120,12 +138,12 @@ export class PaginationQuerysDTO extends BaseDTO {
   @Expose()
   @IsNumber()
   @IsOptional()
-  page: number = 1;
+  page?: number;
 
   @Expose()
   @IsNumber()
   @IsOptional()
-  pageSize: number = 10;
+  pageSize?: number;
 
   @Expose()
   @IsString()
@@ -145,18 +163,17 @@ export class PaginationQuerysDTO extends BaseDTO {
   @Expose()
   @IsBoolean()
   @IsOptional()
-  includeDeleted?: boolean = false;
+  includeDeleted?: boolean;
 
   @Expose()
   @IsBoolean()
   @IsOptional()
-  populateChildren?: boolean = false;
+  populateChildren?: boolean;
 
   @Expose()
   @IsObject()
   @IsOptional()
-  filters?: Record<string, string | number | boolean | string[] | undefined> =
-    {};
+  filters?: Record<string, string | number | boolean | string[] | undefined>;
 }
 
 export interface CreateBaseOptions {
@@ -169,6 +186,7 @@ export function CreateBase<T extends PgTable>(
 ) {
   const tableName = (table as any)[Symbol.for("drizzle:Name")] || "BaseClass";
 
+  // Create unique name based on excluded fields to avoid conflicts
   const excludeSuffix =
     options.exclude && options.exclude.length > 0
       ? `_excluded_${options.exclude.sort().join("_")}`
@@ -185,15 +203,23 @@ export function CreateBase<T extends PgTable>(
 
   const columns = getTableColumns(table);
 
+  console.debug(
+    `Creating ${uniqueClassName} with columns:`,
+    Object.keys(columns).filter((key) => !options.exclude?.includes(key)),
+  );
+
   for (const [key, column] of Object.entries(columns)) {
+    // Skip excluded fields
     if (options.exclude?.includes(key)) {
+      console.debug(`Excluding field: ${key} from ${uniqueClassName}`);
       continue;
     }
 
-    const col = column as any;
+    const col = column as any; // Cast to any to access internal properties safely for now
     const isRequired = col.notNull && !col.hasDefault;
     const type = col.getSQLType();
 
+    // Add validation decorators based on type
     if (
       type.includes("text") ||
       type.includes("char") ||
@@ -211,15 +237,18 @@ export function CreateBase<T extends PgTable>(
       IsNumber()(BaseClass.prototype, key);
     } else if (type.includes("boolean")) {
       IsBoolean()(BaseClass.prototype, key);
-    } else if (type.includes("timestamp") || type.includes("date")) {
+    } else if (type.startsWith("timestamp") || type === "date") {
       IsDate()(BaseClass.prototype, key);
       Type(() => Date)(BaseClass.prototype, key);
     } else {
+      // Fallback to string for unknown types (like enums if not caught elsewhere)
       IsString()(BaseClass.prototype, key);
     }
 
+    // Add @Expose() to include this field in serialization (whitelist approach)
     Expose()(BaseClass.prototype, key);
 
+    // Handle optional fields
     if (!isRequired) {
       IsOptional()(BaseClass.prototype, key);
     }
@@ -239,30 +268,103 @@ export class BaseErrorDTO {
 
   @IsOptional()
   @IsObject()
+  @JSONSchema({
+    type: "object",
+    description: "Additional error details",
+    additionalProperties: true,
+  })
   details?: Record<string, any>;
 }
 
 @DTO()
-export class BaseDeletedSuccessDTO {
+export class BaseDeletedSuccessDTO extends BaseDTO {
+  @Expose()
   @IsBoolean()
   deleted!: boolean;
 
+  @Expose()
   @IsString()
   id!: string;
 }
 
 @DTO()
+export class DeleteMultipleDTO {
+  @IsArray()
+  @IsString({ each: true })
+  ids!: string[];
+}
+
+@DTO()
 export class BaseDeleteMultipleSuccessDTO {
+  @Expose()
   @IsBoolean()
   deleted!: boolean;
 
+  @Expose()
   @IsNumber()
   deletedCount!: number;
 
+  @Expose()
   @IsNumber()
   requestedCount!: number;
 
+  @Expose()
   @IsOptional()
   @IsString()
   message?: string;
+}
+
+@DTO()
+export class StatisticsPeriodDTO extends BaseDTO {
+  @Expose()
+  @IsNumber()
+  count!: number;
+
+  @Expose()
+  @IsString()
+  period!: string;
+
+  @Expose()
+  @IsNumber()
+  @IsOptional()
+  percentage?: number;
+}
+
+@DTO()
+export class StatisticsComparisonDTO extends BaseDTO {
+  @Expose()
+  @ValidateNested()
+  @Type(() => StatisticsPeriodDTO)
+  current!: StatisticsPeriodDTO;
+
+  @Expose()
+  @ValidateNested()
+  @Type(() => StatisticsPeriodDTO)
+  previous!: StatisticsPeriodDTO;
+
+  @Expose()
+  @IsNumber()
+  growth!: number;
+
+  @Expose()
+  @IsNumber()
+  growthPercentage!: number;
+}
+
+@DTO()
+export class EntityStatisticsDTO extends BaseDTO {
+  @Expose()
+  @ValidateNested()
+  @Type(() => StatisticsComparisonDTO)
+  monthly!: StatisticsComparisonDTO;
+
+  @Expose()
+  @ValidateNested()
+  @Type(() => StatisticsComparisonDTO)
+  weekly!: StatisticsComparisonDTO;
+
+  @Expose()
+  @ValidateNested()
+  @Type(() => StatisticsComparisonDTO)
+  yearly!: StatisticsComparisonDTO;
 }

@@ -1,11 +1,22 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Context } from "hono";
+import type { PgColumn } from "drizzle-orm/pg-core";
 
 export interface BaseEntity {
-  id: string | number;
+  id?: string;
   createdAt?: Date | null;
   updatedAt?: Date | null;
-  deletedAt?: Date | null;
+}
+
+export interface BaseTable {
+  name: string;
+  schema: string | undefined;
+  columns: Record<keyof BaseRow, PgColumn>;
+  dialect: "pg";
+}
+
+interface BaseRow {
+  id: string | number;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface CrudOperations<T, CreateDTO, UpdateDTO> {
@@ -16,26 +27,10 @@ export interface CrudOperations<T, CreateDTO, UpdateDTO> {
   delete(id: string | number): Promise<boolean>;
 }
 
-export interface BaseTable {
-  name: string;
-  schema: undefined;
-  columns: {
-    id: any;
-    createdAt?: any;
-    updatedAt?: any;
-    deletedAt?: any;
-  };
-  dialect: string;
-}
+export type bodyGetter = "query" | "formData" | "json";
 
-export type bodyGetter = "json" | "formData" | "query";
-
-export type ContextInstance<T extends bodyGetter> = T extends "json"
-  ? Record<string, unknown>
-  : T extends "formData"
-    ? FormData
-    : T extends "query"
-      ? Record<string, string>
-      : never;
-
-export type ControllerContext = Context;
+export type ContextInstance<T extends bodyGetter> = {
+  query: Record<string, string | string[]>;
+  formData: FormData;
+  json: Record<string, unknown>;
+}[T];

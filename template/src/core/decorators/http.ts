@@ -126,7 +126,7 @@ export function UseMiddleware(middleware: MiddlewareHandler[]) {
       Reflect.getMetadata(MIDDLEWARE_METADATA, target, propertyKey) || [];
     Reflect.defineMetadata(
       MIDDLEWARE_METADATA,
-      [...middlewares, ...middleware],
+      [...middleware, ...middlewares],
       target,
       propertyKey,
     );

@@ -1,3 +1,5 @@
+import { logger } from "../logger";
+
 /**
  * Application configuration
  */
@@ -45,6 +47,31 @@ export interface AppConfig {
     title: string;
     version: string;
   };
+
+  // Storage
+  storage: {
+    provider: "local" | "s3";
+    uploadDir: string;
+    baseUrl: string;
+    maxFileSize: number;
+    allowedMimeTypes: string[];
+  };
+
+  // Email
+  email: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    user: string;
+    pass: string;
+    from: string;
+  };
+
+  // Cors
+  cors: {
+    origin: string[];
+    credentials: boolean;
+  };
 }
 
 export const appConfig: AppConfig = {
@@ -84,5 +111,34 @@ export const appConfig: AppConfig = {
     path: process.env.SWAGGER_PATH || "/docs",
     title: process.env.SWAGGER_TITLE || "API Documentation",
     version: process.env.SWAGGER_VERSION || "1.0.0",
+  },
+
+  storage: {
+    provider:
+      (process.env.STORAGE_PROVIDER as AppConfig["storage"]["provider"]) ||
+      "local",
+    uploadDir: process.env.STORAGE_UPLOAD_DIR || "./static/uploads",
+    baseUrl: process.env.STORAGE_BASE_URL || "/api/files/serve",
+    maxFileSize: Number(process.env.STORAGE_MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB
+    allowedMimeTypes: (
+      process.env.STORAGE_ALLOWED_TYPES || "image/*,application/pdf,video/*"
+    ).split(","),
+  },
+
+  email: {
+    enabled: process.env.EMAIL_ENABLED !== "false",
+    host: process.env.EMAIL_HOST || "smtp.gmail.com",
+    port: Number(process.env.EMAIL_PORT) || 587,
+    user: process.env.EMAIL_USER || "",
+    pass: process.env.EMAIL_PASS || "",
+    from: process.env.EMAIL_FROM || "[EMAIL_ADDRESS]",
+  },
+
+  cors: {
+    origin: (process.env.CORS_ORIGIN || "*").split(",").map((origin) => {
+      logger.info(`Adding CORS origin: ${origin}`);
+      return origin.trim();
+    }),
+    credentials: process.env.CORS_CREDENTIALS === "true",
   },
 };

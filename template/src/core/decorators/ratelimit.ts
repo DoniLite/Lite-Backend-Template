@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import "reflect-metadata";
-import { RATE_LIMIT_METADATA } from "./constants";
 import type { RateLimitOptions } from "./interfaces";
+import { RATE_LIMIT_METADATA } from "./constants";
 
 export function getRateLimitMetadata(
   target: any,
@@ -10,8 +10,10 @@ export function getRateLimitMetadata(
   return Reflect.getMetadata(RATE_LIMIT_METADATA, target, propertyKey);
 }
 
+// ===== RATE LIMIT DECORATOR =====
+
 /**
- * RateLimit decorator - applies rate limiting to route
+ * RateLimit decorator - applies rate limiting to a route
  * @example
  * @RateLimit({ max: 10, window: 60 })
  * @Post({ path: "/login" })

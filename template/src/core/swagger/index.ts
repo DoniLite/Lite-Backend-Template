@@ -5,6 +5,7 @@ import type { Hono } from "hono";
 import {
   getAllControllers,
   getControllerMetadata,
+  getMiddlewareMetadata,
   getRouteMetadata,
   getSwaggerMetadata,
 } from "../decorators";
@@ -232,6 +233,37 @@ export class SwaggerGenerator {
               },
             },
           };
+        }
+
+        // Add security requirements for routes with auth middleware
+        const middlewares =
+          getMiddlewareMetadata(ControllerClass.prototype, route.handler) || [];
+        const hasAuthMiddleware = middlewares.some(
+          (mw: any) =>
+            mw?.name === "authMiddleware" ||
+            mw?.name === "jwt" ||
+            (typeof mw === "function" && mw.toString().includes("jwtPayload")),
+        );
+
+        if (hasAuthMiddleware) {
+          operation.security = [{ bearerAuth: [] }, { cookieAuth: [] }];
+
+          // Add 401 response if not present
+          if (!operation.responses["401"]) {
+            operation.responses["401"] = {
+              description: "Unauthorized",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      error: { type: "string" },
+                    },
+                  },
+                },
+              },
+            };
+          }
         }
 
         paths[fullPath][method] = operation;
