@@ -1,37 +1,64 @@
-import type { MiddlewareHandler } from "hono";
-import { ValidationError } from "@/core/decorators/validation";
-import { ResponseHelper } from "@/helpers/response.helper";
+/**
+ * Global error handling middleware
+ */
+import { ValidationError } from "../core/decorators";
+import { HTTPException } from "hono/http-exception";
+import { logger } from "../core/logger";
+import type { Context, Next } from "hono";
 
-export function errorHandlerMiddleware(): MiddlewareHandler {
-  return async (c, next) => {
+export function errorHandlerMiddleware() {
+  return async (c: Context, next: Next) => {
     try {
       await next();
     } catch (error) {
+      logger.error(
+        "Request error",
+        {
+          method: c.req.method,
+          path: c.req.path,
+        },
+        error,
+      );
+
+      // Handle validation errors
       if (error instanceof ValidationError) {
         return c.json(
-          ResponseHelper.error("Validation failed", { errors: error.errors }),
+          {
+            error: "Validation failed",
+            details: error.errors,
+          },
           error.statusCode,
         );
       }
 
-      if (error instanceof Error) {
-        console.error("Error:", error.message, error.stack);
-
-        if (error.message.includes("not found")) {
-          return c.json(ResponseHelper.error(error.message), 404);
-        }
-
+      // Handle HTTP exceptions
+      if (error instanceof HTTPException) {
         return c.json(
-          ResponseHelper.error(
-            process.env.NODE_ENV === "production"
-              ? "Internal Server Error"
-              : error.message,
-          ),
+          {
+            error: error.message,
+          },
+          error.status,
+        );
+      }
+
+      // Handle generic errors
+      if (error instanceof Error) {
+        return c.json(
+          {
+            error: error.message,
+            name: error.name,
+          },
           500,
         );
       }
 
-      return c.json(ResponseHelper.error("An unexpected error occurred"), 500);
+      // Unknown error
+      return c.json(
+        {
+          error: "An unexpected error occurred",
+        },
+        500,
+      );
     }
   };
 }

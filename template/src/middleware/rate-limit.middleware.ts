@@ -1,58 +1,71 @@
-import type { MiddlewareHandler } from "hono";
-import type { RateLimitOptions } from "@/core/decorators/interfaces";
-import { appConfig } from "@/core/config/app.config";
-import { ResponseHelper } from "@/helpers/response.helper";
+import type { Context, Next } from "hono";
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
+/**
+ * Rate limiting middleware
+ */
+interface RateLimitStore {
+  increment(key: string, window: number): Promise<number>;
+  reset(key: string): Promise<void>;
 }
 
-const rateLimitStore = new Map<string, RateLimitEntry>();
+class MemoryRateLimitStore implements RateLimitStore {
+  private store = new Map<string, { count: number; resetAt: number }>();
 
-export function rateLimitMiddleware(
-  options: RateLimitOptions,
-): MiddlewareHandler {
-  const max = options.max || appConfig.rateLimit.max;
-  const window = options.window || appConfig.rateLimit.window;
-
-  return async (c, next) => {
-    if (!appConfig.rateLimit.enabled) {
-      await next();
-      return;
-    }
-
-    const ip =
-      c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
-    const key = `${ip}:${c.req.path}`;
+  async increment(key: string, window: number): Promise<number> {
     const now = Date.now();
+    const item = this.store.get(key);
 
-    let entry = rateLimitStore.get(key);
-
-    if (!entry || entry.resetTime < now) {
-      entry = {
-        count: 0,
-        resetTime: now + window * 1000,
-      };
+    if (!item || now > item.resetAt) {
+      this.store.set(key, {
+        count: 1,
+        resetAt: now + window * 1000,
+      });
+      return 1;
     }
 
-    entry.count++;
-    rateLimitStore.set(key, entry);
+    item.count++;
+    return item.count;
+  }
 
+  async reset(key: string): Promise<void> {
+    this.store.delete(key);
+  }
+}
+
+export const defaultRateLimitStore = new MemoryRateLimitStore();
+
+export function rateLimitMiddleware(options: {
+  max: number;
+  window: number;
+  message?: string;
+}) {
+  return async (c: Context, next: Next) => {
+    const { max, window, message = "Too many requests" } = options;
+
+    // Generate key based on IP or user ID
+    const identifier =
+      c.req.header("x-forwarded-for") ||
+      c.req.header("x-real-ip") ||
+      "anonymous";
+    const key = `rate-limit:${identifier}:${c.req.path}`;
+
+    const count = await defaultRateLimitStore.increment(key, window);
+
+    // Set rate limit headers
     c.header("X-RateLimit-Limit", max.toString());
-    c.header(
-      "X-RateLimit-Remaining",
-      Math.max(0, max - entry.count).toString(),
-    );
-    c.header("X-RateLimit-Reset", entry.resetTime.toString());
+    c.header("X-RateLimit-Remaining", Math.max(0, max - count).toString());
+    c.header("X-RateLimit-Reset", (Date.now() + window * 1000).toString());
 
-    if (entry.count > max) {
+    if (count > max) {
       return c.json(
-        ResponseHelper.error("Too many requests, please try again later"),
+        {
+          error: message,
+          retryAfter: window,
+        },
         429,
       );
     }
 
-    await next();
+    return next();
   };
 }

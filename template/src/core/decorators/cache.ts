@@ -2,7 +2,7 @@
 import "reflect-metadata";
 import type { CacheOptions } from "./interfaces";
 import { CACHE_METADATA } from "./constants";
-import { defaultCacheStore } from "../../middleware/cache.midleware";
+import { defaultCacheStore } from "../../middleware/cache.middleware";
 
 export function getCacheMetadata(
   target: any,

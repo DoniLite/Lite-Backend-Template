@@ -1,68 +1,97 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { plainToInstance, instanceToPlain } from "class-transformer";
 import type { ClassConstructor } from "class-transformer";
-import type { SerializeOptions } from "@/core/decorators/interfaces";
 
-export interface SerializeResult<T> {
-  success: boolean;
-  data?: T;
-  items?: T[];
-  itemCount?: number;
-  page?: number;
-  pageSize?: number;
-  pageCount?: number;
+export interface SerializeConfig {
+  /** The DTO class to serialize to */
+  dto: ClassConstructor<any>;
+  /** Whether the data is an array */
+  isArray?: boolean;
+  /** Exclude extraneous values not defined in the DTO */
+  excludeExtraneousValues?: boolean;
 }
 
+/**
+ * Serialize data using class-transformer
+ * Handles objects, arrays, and nested structures
+ *
+ * @param data - The data to serialize (plain object, array, or already an instance)
+ * @param config - Serialization configuration
+ * @returns Serialized plain object with excluded fields removed
+ */
 export function serialize<T>(
   data: any,
-  options: SerializeOptions,
-): SerializeResult<T> {
-  const { dto, isArray } = options;
-
-  try {
-    if (data?.items && Array.isArray(data.items)) {
-      // Paginated response
-      const serializedItems = data.items.map((item: any) =>
-        serializeOne(item, dto),
-      );
-      return {
-        success: true,
-        items: serializedItems,
-        itemCount: data.itemCount,
-        page: data.page,
-        pageSize: data.pageSize,
-        pageCount: data.pageCount,
-      };
-    }
-
-    if (isArray && Array.isArray(data)) {
-      const serializedItems = data.map((item: any) => serializeOne(item, dto));
-      return {
-        success: true,
-        items: serializedItems,
-      };
-    }
-
-    if (data?.data) {
-      return {
-        success: true,
-        data: serializeOne(data.data, dto),
-      };
-    }
-
-    return {
-      success: true,
-      data: serializeOne(data, dto),
-    };
-  } catch (error) {
-    console.error("Serialization error:", error);
-    return { success: false };
+  config: SerializeConfig,
+): T | T[] | null {
+  if (data === null || data === undefined) {
+    return null;
   }
+
+  const { dto, isArray, excludeExtraneousValues = true } = config;
+
+  // Handle arrays
+  if (Array.isArray(data) || isArray) {
+    const items = Array.isArray(data) ? data : [data];
+    return items.map((item) =>
+      serializeSingle(item, dto, excludeExtraneousValues),
+    ) as T[];
+  }
+
+  // Handle paginated responses (has 'items' array)
+  // Check if the DTO itself is a Paginated wrapper
+  const isPaginatedWrapper = (dto as any).name?.startsWith("Paginated");
+
+  if (
+    !isPaginatedWrapper &&
+    data &&
+    typeof data === "object" &&
+    "items" in data &&
+    Array.isArray(data.items)
+  ) {
+    return {
+      ...data,
+      items: data.items.map((item: any) =>
+        serializeSingle(item, dto, excludeExtraneousValues),
+      ),
+    } as T;
+  }
+
+  // Handle single object
+  return serializeSingle(data, dto, excludeExtraneousValues) as T;
 }
 
-function serializeOne<T>(data: any, dto: ClassConstructor<T>): T {
+/**
+ * Serialize a single object
+ */
+function serializeSingle<T>(
+  data: any,
+  dto: ClassConstructor<T>,
+  excludeExtraneousValues: boolean,
+): T {
+  // Convert plain object to class instance
   const instance = plainToInstance(dto, data, {
-    excludeExtraneousValues: true,
+    excludeExtraneousValues,
   });
-  return instanceToPlain(instance) as T;
+
+  // Convert back to plain object, respecting @Exclude() decorators
+  return instanceToPlain(instance, {
+    excludePrefixes: ["_"],
+  }) as T;
+}
+
+/**
+ * Create a serialization wrapper for response data
+ * Useful for manual serialization in controllers
+ *
+ * @example
+ * const serializer = createSerializer(UserResponseDTO);
+ * return c.json(serializer(userData));
+ */
+export function createSerializer<T>(
+  dto: ClassConstructor<T>,
+  options?: Omit<SerializeConfig, "dto">,
+) {
+  return (data: any): T | T[] | null => {
+    return serialize(data, { dto, ...options });
+  };
 }

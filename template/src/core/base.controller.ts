@@ -12,7 +12,7 @@ import {
   getRateLimitMetadata,
   getSerializeMetadata,
 } from "./decorators";
-import { cacheMiddleware } from "../middleware/cache.midleware";
+import { cacheMiddleware } from "../middleware/cache.middleware";
 import { rateLimitMiddleware } from "../middleware/rate-limit.middleware";
 import { serialize } from "../middleware/serialize.middleware";
 import { BaseDTO } from "./dto";
